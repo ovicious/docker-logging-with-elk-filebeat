@@ -1,0 +1,110 @@
+version: '3.3'
+
+services:
+
+  elasticsearch:
+    image: ${ELASTIC_IMAGE}
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    configs:
+      - source: elastic_config
+        target: /usr/share/elasticsearch/config/elasticsearch.yml
+    environment:
+      ES_JAVA_OPTS: "-Xmx1g -Xms1g"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks
+      # see https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+    env_file:
+      - .env
+    volumes:
+      - type: volume
+        source: elastic-data
+        target: /usr/share/elasticsearch/data
+        volume:
+          nocopy: true
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.elasticsearch == true
+    # logging:
+    #   driver: syslog
+    #   options:
+    #     syslog-address: "tcp://${SYSLOG_HOST}:514"
+    #     tag: "elasticsearch:"
+
+  logstash:
+    image: ${LOGSTASH_IMAGE}
+    ports:
+      - "5000:5000"
+      - "5044:5044"
+      - "9600:9600"
+    configs:
+      - source: logstash_config
+        target: /usr/share/logstash/config/logstash.yml
+      - source: logstash_pipeline
+        target: /usr/share/logstash/pipeline/logstash.conf
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    env_file:
+      - .env
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.logstash == true
+    # logging:
+    #   driver: syslog
+    #   options:
+    #     syslog-address: "tcp://${SYSLOG_HOST}:514"
+    #     tag: "logstash:"
+
+  kibana:
+    image: ${KIBANA_IMAGE}
+    ports:
+      - "5601:5601"
+    configs:
+      - source: kibana_config
+        target: /usr/share/kibana/config/kibana.yml
+    env_file:
+      - .env    
+    networks:
+      - elk
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.kibana == true
+    # logging:
+    #   driver: syslog
+    #   options:
+    #     syslog-address: "tcp://${SYSLOG_HOST}:514"
+    #     tag: "kibana:"
+
+configs:
+
+  elastic_config:
+    file: ./config/elasticsearch/config/elasticsearch.yml
+  logstash_config:
+    file: ./config/logstash/config/logstash.yml
+  logstash_pipeline:
+    file: ./config/logstash/pipeline/logstash.conf
+  kibana_config:
+    file: ./config/kibana/config/kibana.yml
+
+volumes:
+  elastic-data:
+    external: true
+
+networks:
+  elk:
+    driver: bridge
